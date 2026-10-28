@@ -24,9 +24,10 @@ module encryption(
     reg         ad_last; // flag that no more associated data is coming 
 
     // wires:
-    wire [319:0] state_o;  // permutation output state
-    wire [127:0] ad_or_pt; // ad or pt with padding if last block
-    wire [7:0]   round_c;  // round constants
+    wire [319:0] state_o;    // permutation output state
+    wire [127:0] ad_or_pt;   // ad or pt with padding if last block
+    wire [127:0] rate_xored; // upper 128-bit rate state XORed with ad_or_pt
+    wire [7:0]   round_c;    // round constants
 
 
     // round constants:
@@ -34,6 +35,9 @@ module encryption(
     
     // pad ad or pt if last block
     assign ad_or_pt = (last) ? pad(data_in, data_length) : data_in;
+
+    // shared 128-bit XOR for state absorption and ciphertext output
+    assign rate_xored = state[319:192] ^ ad_or_pt;
 
     // permutation module: runs 12/8 permutations
     ascon_round u_ascon_round(
@@ -96,7 +100,7 @@ module encryption(
 
                 // 3. Permutate *12
                 I_PERMUTATE: begin
-                    if (i<11) begin // run permutation *12
+                    if (i < 4'd11) begin // run permutation *12
                         state <= state_o;  // update state after permutation
                         i <= i+1'b1; // inctement round counter
                     end
@@ -118,16 +122,16 @@ module encryption(
                         fsm <= PT_LOAD;        // go to plaintext loading phase
                     end
                     else if (load) begin
-                        i       <= 4'd4; // reset round counter to 4 for 8 rounds
-                        ad_last <= last; // Store ad_last so core remembers during permutation
-                        fsm     <= AD_PERMUTATE; 
-                        state   <= state ^ {ad_or_pt, 192'b0}; // add ad to state
+                        i              <= 4'd4; // reset round counter to 4 for 8 rounds
+                        ad_last        <= last; // Store ad_last so core remembers during permutation
+                        fsm            <= AD_PERMUTATE; 
+                        state[319:192] <= rate_xored; // add ad to state
                     end
                 end
 
                 // 2. permutate *8
                 AD_PERMUTATE: begin
-                    if (i<11) begin // run permutation *8
+                    if (i < 4'd11) begin // run permutation *8
                         state <= state_o;  // update state after permutation
                         i <= i+1'b1; // inctement round counter
                     end
@@ -152,14 +156,14 @@ module encryption(
                 // 1. add plaintext
                 PT_LOAD: begin
                     if (load) begin
+                        state[319:192] <= rate_xored;
                         if (last) begin // last block: pad pt, add key
-                            state <= state ^ {ad_or_pt, k, 64'b0}; // add key for finilaization stage
-                            i     <= 4'd0;      // reset counter to 0 for finilization stage
-                            fsm <= F_PERMUTATE; // go to finalization stage
+                            state[191:64] <= state[191:64] ^ k; // add key for finalization stage
+                            i             <= 4'd0;              // reset counter to 0 for finalization stage
+                            fsm           <= F_PERMUTATE;       // go to finalization stage
                         end
                         else begin      // middle block: 16 bytes
-                            state   <= state ^ {ad_or_pt, 192'b0};
-                            i <= 4'd4; // reset round counter to 4 for 8 rounds
+                            i   <= 4'd4; // reset round counter to 4 for 8 rounds
                             fsm <= PT_PERMUTATE;
                         end           
                     end
@@ -167,7 +171,7 @@ module encryption(
 
                 // 2. permutate *8
                 PT_PERMUTATE: begin
-                    if (i < 11) begin // run permutation *8
+                    if (i < 4'd11) begin // run permutation *8
                         state <= state_o;  // update state after permutation
                         i <= i+1'b1; // inctement round counter
                     end
@@ -185,7 +189,7 @@ module encryption(
 
                 // 2. permutate *12
                 F_PERMUTATE: begin
-                    if (i < 11) begin
+                    if (i < 4'd11) begin
                         state <= state_o;
                         i     <= i + 1'b1;
                     end
@@ -202,7 +206,7 @@ module encryption(
     end
 
     // Output assignments
-    assign ct = (last) ? truncate(state[319:192] ^ data_in, data_length) : (state[319:192] ^ data_in);
+    assign ct = (last) ? truncate(rate_xored, data_length) : rate_xored;
     assign ct_valid = (fsm == PT_LOAD) && load;
     assign t = state[127:0];
     assign finish = (fsm == F_PERMUTATE) && (i == 4'd11);
@@ -220,7 +224,7 @@ module encryption(
         integer j;
         begin
             for (j = 0; j < 16; j = j + 1) begin
-                truncate[127 - 8*j -: 8] = (j < length) ? data[127 - 8*j -: 8] : 8'h00;
+                truncate[127 - 8*j -: 8] = (j[3:0] < length) ? data[127 - 8*j -: 8] : 8'h00;
             end
         end
     endfunction
@@ -232,9 +236,9 @@ module encryption(
         integer j;
         begin
             for (j = 0; j < 16; j = j + 1) begin
-                if (j < length)
+                if (j[3:0] < length)
                     pad[127 - 8*j -: 8] = data[127 - 8*j -: 8];
-                else if (j == length)
+                else if (j[3:0] == length)
                     pad[127 - 8*j -: 8] = 8'h80;
                 else
                     pad[127 - 8*j -: 8] = 8'h00;

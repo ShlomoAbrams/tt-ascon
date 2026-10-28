@@ -200,11 +200,14 @@ module tt_um_ascon (
     // ========================================================================
     // 6. Host Read Multiplexer (Combinational Output Stage)
     // ========================================================================
+    wire [127:0] ct_or_tag      = read_tag ? t : buffer;
+    wire [7:0]   ct_or_tag_byte = ct_or_tag[127 - byte_addr*8 -: 8];
+
     always @(*) begin
         case ({read_tag, bank})
             2'b00: begin
                 // read_tag = 0, bank = 0 (0x00 - 0x0F): Read Ciphertext from buffer
-                rdata = buffer[127 - byte_addr*8 -: 8];
+                rdata = ct_or_tag_byte;
             end
 
             2'b01: begin
@@ -218,7 +221,7 @@ module tt_um_ascon (
 
             2'b10, 2'b11: begin
                 // read_tag = 1: Read 128-bit Authentication Tag
-                rdata = t[127 - byte_addr*8 -: 8];
+                rdata = ct_or_tag_byte;
             end
 
             default: begin
