@@ -1,4 +1,4 @@
-# Makefile
+﻿# Makefile
 # See https://docs.cocotb.org/en/stable/quickstart.html for more info
 
 # defaults
@@ -6,7 +6,7 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v
+PROJECT_SOURCES = tt_um_ascon.v ascon_encryption.v ascon_round.v
 
 ifneq ($(GATES),yes)
 
