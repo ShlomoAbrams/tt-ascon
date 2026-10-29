@@ -16,7 +16,7 @@ jobs:
       - name: Build GDS
         uses: TinyTapeout/tt-gds-action@ttgf26c
         with:
-          pdk: gf180mcuD
+          pdk: sky130A
 
   precheck:
     needs: gds
